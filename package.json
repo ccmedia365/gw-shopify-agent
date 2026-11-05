@@ -1,0 +1,35 @@
+{
+  "name": "gw-shopify-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Good Work Shopify build agent — builds client themes from gw-theme, loads catalogs, runs QA, reports to the Good Work tracker",
+  "bin": {
+    "gw-shopify-agent": "./bin/gw-shopify-agent.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "run": "tsx src/cli.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.318",
+    "@axe-core/playwright": "^4.10.0",
+    "commander": "^13.0.0",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.0",
+    "pixelmatch": "^6.0.0",
+    "playwright": "^1.63.0",
+    "pngjs": "^7.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
