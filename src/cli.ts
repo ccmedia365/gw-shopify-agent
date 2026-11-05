@@ -132,6 +132,9 @@ program
     const url = process.env.GW_TRACKER_URL; const token = process.env.GW_TRACKER_TOKEN;
     if (!url || !token) throw new Error('GW_TRACKER_URL and GW_TRACKER_TOKEN are required');
     const tracker = new HttpTracker(url, token);
+    // Any crash from here on is reported to the tracker (error event + status failed) so the build never sits on `queued` silently.
+    process.on('uncaughtException', (e) => reportCrash(tracker, id, e));
+    process.on('unhandledRejection', (e) => reportCrash(tracker, id, e));
     const { build, store, questions } = await tracker.fetchBuild(id);
     if (store) {
       process.env.SHOPIFY_CLI_THEME_TOKEN ||= store.theme_access_token || '';
@@ -175,6 +178,17 @@ program
     saveBuild(r);
     console.log('noted');
   });
+
+let crashReported = false;
+async function reportCrash(tracker: HttpTracker, id: string, e: unknown) {
+  const msg = e instanceof Error ? `${e.message}\n${(e.stack || '').split('\n').slice(1, 4).join('\n')}` : String(e);
+  console.error(msg);
+  if (!crashReported) {
+    crashReported = true;
+    await tracker.reportFailure(id, `Agent crashed: ${msg}`);
+  }
+  process.exit(1);
+}
 
 function printStatus(r: ReturnType<typeof loadBuild>) {
   console.log(`\n${r.id}\n  status: ${r.status}  next: ${r.nextPhase ?? '-'}  spend: $${r.spendUsd.toFixed(2)}  turns: ${r.turns}`);

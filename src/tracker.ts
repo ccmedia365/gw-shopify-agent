@@ -71,7 +71,9 @@ export class HttpTracker extends LocalTracker {
   }
 
   private url(path: string) {
-    return `${this.baseUrl.replace(/\/$/, '')}${path}`;
+    // Accept "tracker.goodwork.io" as well as "https://tracker.goodwork.io/".
+    const base = this.baseUrl.trim().replace(/\/$/, '');
+    return `${/^https?:\/\//i.test(base) ? base : `https://${base}`}${path}`;
   }
 
   private async send(method: 'POST' | 'PATCH' | 'GET', path: string, body?: unknown) {
@@ -87,6 +89,12 @@ export class HttpTracker extends LocalTracker {
   /** GET the build record + store secrets from the tracker. */
   async fetchBuild(id: string): Promise<{ build: any; store: any; questions: any[] }> {
     return this.send('GET', `/api/builds/${id}`);
+  }
+
+  /** Mark a build failed with an error event. Needs only the id, so it works even before the local record exists. */
+  async reportFailure(id: string, message: string) {
+    await this.send('POST', `/api/builds/${id}/events`, { phase: 'failed', level: 'error', message: message.slice(0, 3000) }).catch((err) => console.error(err.message));
+    await this.send('PATCH', `/api/builds/${id}`, { status: 'failed', last_summary: message.slice(0, 500) }).catch((err) => console.error(err.message));
   }
 
   async patch(record: BuildRecord, status: Status, extra: Record<string, unknown> = {}) {
