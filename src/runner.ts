@@ -6,6 +6,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { query, createSdkMcpServer, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { GATES, PHASES, nextPhaseAfter, saveBuild, type BuildRecord, type Phase } from './build.js';
@@ -68,6 +69,29 @@ function systemPrompt(record: BuildRecord): string {
   ].join('');
 }
 
+/** Claude Code keeps session transcripts under ~/.claude/projects/<cwd-slug>/<sessionId>.jsonl. */
+function sessionExists(sessionId: string): boolean {
+  const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+  if (!fs.existsSync(root)) return false;
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop()!;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) stack.push(path.join(dir, entry.name));
+      else if (entry.name === `${sessionId}.jsonl`) return true;
+    }
+  }
+  return false;
+}
+
+/** Summaries the earlier phases wrote (phase-<name>.md), to seed a fresh session with what already happened. */
+function priorSummaries(record: BuildRecord): string {
+  const files = fs.existsSync(record.workdir) ? fs.readdirSync(record.workdir).filter((f) => /^phase-.*\.md$/.test(f)) : [];
+  if (!files.length) return '';
+  const parts = files.map((f) => `## ${f}\n${fs.readFileSync(path.join(record.workdir, f), 'utf8').slice(0, 3000)}`);
+  return `\n\n# What earlier phases did (you are continuing a build, not starting one)\n\n${parts.join('\n\n')}`;
+}
+
 export async function runPhase(record: BuildRecord, phase: Phase, tracker: Tracker, opts: RunOptions = {}): Promise<BuildRecord> {
   const makePrompt = PHASE_PROMPTS[phase];
   if (!makePrompt) throw new Error(`Phase ${phase} is not runnable`);
@@ -78,15 +102,20 @@ export async function runPhase(record: BuildRecord, phase: Phase, tracker: Track
   let resultText = '';
   let subtype = '';
   const start = Date.now();
+  // Resume the previous phase's session only when its transcript is actually on this machine; a fresh sandbox or a lost
+  // snapshot would otherwise fail with "No conversation found". Without it the phase prompt + the phase-*.md summaries carry
+  // enough context to continue.
+  const resume = record.sessionId && sessionExists(record.sessionId) ? record.sessionId : undefined;
+  if (record.sessionId && !resume) await tracker.event(record, { phase, level: 'warn', message: `Previous session ${record.sessionId} is not on this machine; starting a fresh session.` });
   try {
     for await (const message of query({
-      prompt,
+      prompt: resume ? prompt : prompt + priorSummaries(record),
       options: {
         cwd: record.themeDir || record.workdir,
         model: opts.model,
         systemPrompt: systemPrompt(record),
         settingSources: [],
-        resume: record.sessionId,
+        resume,
         maxTurns: opts.maxTurnsPerPhase ?? 120,
         maxBudgetUsd: opts.maxBudgetUsd,
         permissionMode: 'default',
