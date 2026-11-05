@@ -20,6 +20,7 @@ cp .env.example .env             # fill in the values below
 | `SHOPIFY_STOREFRONT_PASSWORD` | if the store is password-protected | lets the screenshot tools through the password page |
 | `SHOPIFY_ADMIN_TOKEN` | for catalog loading | custom app token (`shpat_…`) with `write_products, write_inventory, write_files, read_locations, write_publications` |
 | `GW_BASE_THEME` | no | git URL or local path of gw-theme (default `https://github.com/ccmedia365/gw-theme.git`) |
+| `GW_BASE_THEME_TOKEN` | if gw-theme is private | GitHub token that can read gw-theme (falls back to `GW_AGENT_REPO_TOKEN`) |
 | `GW_STAGING_STORE`, `GW_STAGING_THEME_TOKEN`, `GW_STAGING_PASSWORD` | no | Good Work staging store for design previews (gate 1); without them previews go to the client store as an unpublished theme |
 | `FIGMA_TOKEN` | for Figma inputs | Figma personal access token |
 | `GW_TRACKER_URL`, `GW_TRACKER_TOKEN` | no | when set, events/status/questions/artifacts also post to tracker.goodwork.io; otherwise they stay in `.gw-builds/<id>/` |

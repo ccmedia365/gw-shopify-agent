@@ -48,10 +48,16 @@ export const forkBaseTheme = (record: BuildRecord) =>
       const dest = path.join(record.workdir, `gw-theme-${record.intake.client}`);
       if (!fs.existsSync(dest)) {
         const src = record.intake.baseThemeRepo;
+        // A private base theme on GitHub: clone with a token (GW_BASE_THEME_TOKEN, else the agent-repo token) without ever
+        // printing it. The remote is reset to the bare URL afterwards so the token never lands in .git/config.
+        const token = process.env.GW_BASE_THEME_TOKEN || process.env.GW_AGENT_REPO_TOKEN;
+        const authed = token && /^https:\/\/github\.com\//.test(src) ? src.replace('https://github.com/', `https://x-access-token:${token}@github.com/`) : src;
         try {
-          execFileSync('git', ['clone', '-q', src, dest], { stdio: 'pipe' });
+          execFileSync('git', ['clone', '-q', authed, dest], { stdio: 'pipe', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+          if (authed !== src) execFileSync('git', ['remote', 'set-url', 'origin', src], { cwd: dest });
         } catch (e: any) {
-          return fail(`git clone ${src} failed: ${e.stderr?.toString() || e.message}`);
+          const msg = (e.stderr?.toString() || e.message).replaceAll(token || '\u0000', '***');
+          return fail(`git clone ${src} failed: ${msg}${/could not read Username|Authentication failed|403/.test(msg) ? '\n(The base theme repo is private and no GitHub token is set: set GW_BASE_THEME_TOKEN or GW_AGENT_REPO_TOKEN to a token that can read it, or make the repo public.)' : ''}`);
         }
         execFileSync('git', ['checkout', '-q', '-b', `build/${record.id}`], { cwd: dest });
       }
