@@ -102,6 +102,7 @@ export async function runPhase(record: BuildRecord, phase: Phase, tracker: Track
   let resultText = '';
   let subtype = '';
   const start = Date.now();
+  let lastBeat = Date.now();
   // Resume the previous phase's session only when its transcript is actually on this machine; a fresh sandbox or a lost
   // snapshot would otherwise fail with "No conversation found". Without it the phase prompt + the phase-*.md summaries carry
   // enough context to continue.
@@ -143,6 +144,12 @@ export async function runPhase(record: BuildRecord, phase: Phase, tracker: Track
       },
     }) as AsyncIterable<SDKMessage>) {
       handleMessage(message, record, opts);
+      // Heartbeat every 90s: the tracker's stale-run banner otherwise fires during long quiet stretches (building sections).
+      if (message.type === 'assistant' && tracker.heartbeat && Date.now() - lastBeat > 90_000) {
+        lastBeat = Date.now();
+        const tools = ((message as any).message?.content ?? []).filter((b: any) => b.type === 'tool_use').map((b: any) => b.name.replace(/^mcp__gw__/, ''));
+        void tracker.heartbeat(record, `${phase}${tools.length ? ' — ' + tools.join(', ') : ''}`);
+      }
       if (message.type === 'result') {
         subtype = message.subtype;
         resultText = 'result' in message ? String(message.result ?? '') : '';

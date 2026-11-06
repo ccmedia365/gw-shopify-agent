@@ -13,6 +13,8 @@ export interface Tracker {
   status(record: BuildRecord, status: Status, patch?: Partial<BuildRecord>): Promise<void>;
   question(record: BuildRecord, question: string, options?: string[]): Promise<string>;
   artifact(record: BuildRecord, kind: string, filePath: string, url?: string): Promise<void>;
+  /** Liveness: touch the record (with what the agent is doing) while a phase runs quietly. */
+  heartbeat?(record: BuildRecord, doing: string): Promise<void>;
 }
 
 export class LocalTracker implements Tracker {
@@ -95,6 +97,10 @@ export class HttpTracker extends LocalTracker {
   async reportFailure(id: string, message: string) {
     await this.send('POST', `/api/builds/${id}/events`, { phase: 'failed', level: 'error', message: message.slice(0, 3000) }).catch((err) => console.error(err.message));
     await this.send('PATCH', `/api/builds/${id}`, { status: 'failed', last_summary: message.slice(0, 500) }).catch((err) => console.error(err.message));
+  }
+
+  async heartbeat(record: BuildRecord, doing: string) {
+    await this.send('PATCH', `/api/builds/${record.id}`, { turns: record.turns, spend_usd: record.spendUsd, last_summary: `Working: ${doing}`.slice(0, 500) }).catch(() => {});
   }
 
   async patch(record: BuildRecord, status: Status, extra: Record<string, unknown> = {}) {
