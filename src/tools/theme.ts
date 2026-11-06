@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { BuildRecord } from '../build.js';
@@ -21,8 +22,11 @@ export function shopifyEnv(record: BuildRecord, overrides: { store?: string; tok
   // the theme root to the *agent's* package instead of the cwd, sees no theme files,
   // and deletes everything on the remote theme.
   const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^npm_|^INIT_CWD$|^NODE$/.test(k)));
+  // The CLI is a dependency of this package (so a bare `npm ci` in a sandbox has it); put its bin dir first on PATH.
+  const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin');
   return {
     ...clean,
+    PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`,
     SHOPIFY_FLAG_STORE: overrides.store || record.intake.shopDomain,
     SHOPIFY_CLI_THEME_TOKEN: overrides.token || record.intake.themeToken || process.env.SHOPIFY_CLI_THEME_TOKEN || '',
     SHOPIFY_FLAG_FORCE: '1',

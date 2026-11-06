@@ -7,8 +7,7 @@ Built on the Claude Agent SDK. Milestone 2 (terminal mode) — the tracker integ
 ## Setup
 
 ```bash
-npm install                      # Node 22+; installs the SDK, Playwright 1.63 (matches the preinstalled browser), zod 4
-npm install -g @shopify/cli      # theme check / push
+npm install                      # Node 22+; installs the SDK, Shopify CLI 5, Playwright 1.63 (matches the preinstalled browser), zod 4
 cp .env.example .env             # fill in the values below
 ```
 
