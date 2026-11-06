@@ -143,7 +143,9 @@ program
     }
     let record: ReturnType<typeof loadBuild>;
     try { record = loadBuild(id); } catch { record = newBuildWithId(id, { ...build.intake, shopDomain: build.intake.shopDomain || store?.shop_domain, storefrontPassword: build.intake.storefrontPassword || store?.storefront_password, markets: build.intake.markets || store?.markets }); }
-    // The tracker is the source of truth for status, notes, selected apps and answered questions.
+    // The tracker is the source of truth for status, notes, selected apps, answered questions — and the intake (design inputs
+    // can be added to a parked build from the panel). Secrets stay as resolved locally.
+    record.intake = { ...record.intake, ...build.intake, shopDomain: build.intake.shopDomain || record.intake.shopDomain, storefrontPassword: record.intake.storefrontPassword || build.intake.storefrontPassword || store?.storefront_password, markets: build.intake.markets || record.intake.markets };
     record.status = build.status; record.nextPhase = build.next_phase || record.nextPhase || 'intake';
     record.notes = build.notes || []; record.selectedApps = build.selected_apps || undefined; record.sessionId = build.session_id || record.sessionId;
     record.devThemeId = build.dev_theme_id || record.devThemeId; record.stagingThemeId = build.staging_theme_id || record.stagingThemeId;
