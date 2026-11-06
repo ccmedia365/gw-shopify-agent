@@ -137,15 +137,18 @@ program
     process.on('unhandledRejection', (e) => reportCrash(tracker, id, e));
     const { build, store, questions } = await tracker.fetchBuild(id);
     if (store) {
-      process.env.SHOPIFY_CLI_THEME_TOKEN ||= store.theme_access_token || '';
-      process.env.SHOPIFY_ADMIN_TOKEN ||= store.admin_api_token || '';
-      process.env.SHOPIFY_STOREFRONT_PASSWORD ||= store.storefront_password || '';
+      // The Store card is the source of truth for secrets: it can be corrected while a build is parked.
+      if (store.theme_access_token) process.env.SHOPIFY_CLI_THEME_TOKEN = store.theme_access_token;
+      if (store.admin_api_token) process.env.SHOPIFY_ADMIN_TOKEN = store.admin_api_token;
+      if (store.admin_client_id) process.env.SHOPIFY_ADMIN_CLIENT_ID = store.admin_client_id;
+      if (store.admin_client_secret) process.env.SHOPIFY_ADMIN_CLIENT_SECRET = store.admin_client_secret;
+      if (store.storefront_password) process.env.SHOPIFY_STOREFRONT_PASSWORD = store.storefront_password;
     }
     let record: ReturnType<typeof loadBuild>;
     try { record = loadBuild(id); } catch { record = newBuildWithId(id, { ...build.intake, shopDomain: build.intake.shopDomain || store?.shop_domain, storefrontPassword: build.intake.storefrontPassword || store?.storefront_password, markets: build.intake.markets || store?.markets }); }
     // The tracker is the source of truth for status, notes, selected apps, answered questions — and the intake (design inputs
     // can be added to a parked build from the panel). Secrets stay as resolved locally.
-    record.intake = { ...record.intake, ...build.intake, shopDomain: build.intake.shopDomain || record.intake.shopDomain, storefrontPassword: record.intake.storefrontPassword || build.intake.storefrontPassword || store?.storefront_password, markets: build.intake.markets || record.intake.markets };
+    record.intake = { ...record.intake, ...build.intake, shopDomain: build.intake.shopDomain || record.intake.shopDomain, storefrontPassword: store?.storefront_password || build.intake.storefrontPassword || record.intake.storefrontPassword, markets: build.intake.markets || record.intake.markets };
     record.status = build.status; record.nextPhase = build.next_phase || record.nextPhase || 'intake';
     record.notes = build.notes || []; record.selectedApps = build.selected_apps || undefined; record.sessionId = build.session_id || record.sessionId;
     record.devThemeId = build.dev_theme_id || record.devThemeId; record.stagingThemeId = build.staging_theme_id || record.stagingThemeId;
