@@ -11,6 +11,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import type { BuildRecord } from '../build.js';
+import { tileImages } from './design.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const fail = (t: string) => ({ content: [{ type: 'text' as const, text: t }], isError: true });
@@ -76,9 +77,13 @@ export const screenshotPages = (record: BuildRecord) =>
         }
         fs.writeFileSync(path.join(dir, 'report.json'), JSON.stringify({ report, errors }, null, 2));
         const problems = report.filter((r) => r.status !== 200 || r.h1 !== 1 || r.liquidErrors || r.overflow > 1);
+        // Desktop shots are tall; tile them so they can be read at full resolution next to the design tiles.
+        const tiled = await tileImages(report.filter((r) => r.width === 'desktop').map((r) => r.file), path.join(dir, 'tiles')).catch(() => ({ images: [] as { file: string; tiles: string[] }[] }));
+        const tileLines = tiled.images.map((im) => `${path.basename(im.file)} tiles: ${im.tiles.join(', ')}`);
         return text(
           `${report.length} screenshots in ${dir}.\n` +
             report.map((r) => `${r.page}-${r.width}: ${r.status} h1=${r.h1} liquidErrors=${r.liquidErrors} overflow=${r.overflow}px → ${r.file}`).join('\n') +
+            (tileLines.length ? `\n\nFull-resolution tiles (read these when comparing with the design tiles):\n${tileLines.join('\n')}` : '') +
             (errors.length ? `\nJS errors: ${[...new Set(errors)].slice(0, 5).join(' | ')}` : '\nNo JS page errors.') +
             (problems.length ? `\n\nPROBLEMS: ${problems.length}` : '\n\nAll pages clean.'),
         );

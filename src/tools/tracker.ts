@@ -27,7 +27,7 @@ export const attachArtifact = (record: BuildRecord, tracker: Tracker) =>
   tool(
     'attach_artifact',
     'Attach a file in the build folder to the tracker as a named artifact (mapping_report, preview_images, punch_list, catalog_issues, design_md, qa_report, screenshots, other).',
-    { kind: z.enum(['mapping_report', 'preview_images', 'punch_list', 'catalog_issues', 'design_md', 'qa_report', 'screenshots', 'app_proposal', 'other']), path: z.string(), url: z.string().optional() },
+    { kind: z.enum(['mapping_report', 'preview_images', 'punch_list', 'catalog_issues', 'design_md', 'qa_report', 'screenshots', 'app_proposal', 'library_upstream', 'other']), path: z.string(), url: z.string().optional() },
     async ({ kind, path: p, url }) => {
       const abs = path.isAbsolute(p) ? p : path.join(record.workdir, p);
       if (!fs.existsSync(abs)) return { ...text(`Not found: ${abs}`), isError: true };

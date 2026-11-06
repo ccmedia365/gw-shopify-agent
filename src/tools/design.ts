@@ -5,6 +5,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { chromium } from 'playwright';
@@ -200,6 +201,57 @@ export const ingestHtml = (record: BuildRecord) =>
 
 /* ---------------- Images / PDF ---------------- */
 
+export const TILE_H = 1100;
+
+/**
+ * Slice each image into full-resolution horizontal tiles (TILE_H px tall) and sample its dominant colours, using the bundled
+ * Chromium so PNG/JPEG/WebP all work without native image deps. Tiles go to <outDir>/<stem>-NN.png.
+ */
+export async function tileImages(files: string[], outDir: string) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const browser = await chromium.launch();
+  const images: { file: string; width: number; height: number; tiles: string[]; palette: { hex: string; pct: number }[] }[] = [];
+  try {
+    for (const file of files) {
+      const page = await browser.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 });
+      await page.goto('file://' + file);
+      const dims = (await page.evaluate('(() => { const i = document.querySelector("img"); return i ? [i.naturalWidth, i.naturalHeight] : [0, 0]; })()')) as [number, number];
+      const [w, h] = dims;
+      if (!w || !h) { await page.close(); continue; }
+      const width = Math.min(w, 2400);
+      const scale = width / w;
+      const height = Math.round(h * scale);
+      await page.setViewportSize({ width, height: Math.min(height, 4000) });
+      const html = path.join(outDir, `.${slug(path.basename(file))}.html`);
+      const mime = /\.png$/i.test(file) ? 'image/png' : /\.webp$/i.test(file) ? 'image/webp' : 'image/jpeg';
+      // Inline the image as a data URL so the canvas palette sample is same-origin (file:// images taint it).
+      fs.writeFileSync(html, `<html><body style="margin:0;background:#fff"><img src="data:${mime};base64,${fs.readFileSync(file).toString('base64')}" style="display:block;width:${width}px;height:${height}px"></body></html>`);
+      await page.goto('file://' + html, { waitUntil: 'load' });
+      fs.rmSync(html, { force: true });
+      const stem = slug(path.basename(file, path.extname(file)));
+      const tiles: string[] = [];
+      for (let y = 0, n = 0; y < height; y += TILE_H, n++) {
+        const out = path.join(outDir, `${stem}-${String(n).padStart(2, '0')}.png`);
+        await page.screenshot({ path: out, clip: { x: 0, y, width, height: Math.min(TILE_H, height - y) }, fullPage: true });
+        tiles.push(out);
+      }
+      const palette = (await page.evaluate(`(() => {
+        const img = document.querySelector('img'); const c = document.createElement('canvas'); const s = 200 / Math.max(img.naturalWidth, img.naturalHeight);
+        c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+        const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+        const d = ctx.getImageData(0, 0, c.width, c.height).data; const m = new Map(); let total = 0;
+        for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 128) continue; const k = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4); m.set(k, (m.get(k) || 0) + 1); total++; }
+        return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => ({ hex: '#' + [(k >> 8) & 15, (k >> 4) & 15, k & 15].map((v) => (v * 17).toString(16).padStart(2, '0')).join(''), pct: Math.round((n / total) * 1000) / 10 }));
+      })()`)) as { hex: string; pct: number }[];
+      images.push({ file, width: w, height: h, tiles, palette });
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+  return { images };
+}
+
 export const ingestImages = (record: BuildRecord) =>
   tool(
     'ingest_images',
@@ -242,9 +294,24 @@ export const ingestImages = (record: BuildRecord) =>
           out.push(dest);
         }
       }
-      fs.writeFileSync(path.join(designDir(record), 'images.json'), JSON.stringify({ files: out, errors }, null, 2));
-      if (!out.length) return fail(`No images collected.${errors.length ? ' ' + errors.join(' | ') : ''}`);
-      return text(`${out.length} image(s) in design/images/. Read each with the Read tool to analyse it:\n${out.join('\n')}${errors.length ? '\n\nProblems: ' + errors.join(' | ') : ''}`);
+      // Drop byte-identical duplicates (the same screenshot uploaded twice).
+      const seen = new Map<string, string>();
+      const unique: string[] = [];
+      for (const f of out) {
+        const h = crypto.createHash('md5').update(fs.readFileSync(f)).digest('hex');
+        if (seen.has(h)) errors.push(`${path.basename(f)} is identical to ${path.basename(seen.get(h)!)} — ignored`);
+        else { seen.set(h, f); unique.push(f); }
+      }
+      // Tall page screenshots are useless shrunk to one frame: slice every image into full-resolution tiles and sample its palette.
+      const tiled = await tileImages(unique, path.join(designDir(record), 'tiles')).catch((e) => ({ error: e.message as string }));
+      const info = 'error' in tiled ? [] : tiled.images;
+      if ('error' in tiled) errors.push(`tiling failed: ${tiled.error}`);
+      fs.writeFileSync(path.join(designDir(record), 'images.json'), JSON.stringify({ files: unique, images: info, errors }, null, 2));
+      if (!unique.length) return fail(`No images collected.${errors.length ? ' ' + errors.join(' | ') : ''}`);
+      const lines = info.length
+        ? info.map((im) => `${path.basename(im.file)} — ${im.width}×${im.height}px, ${im.tiles.length} tiles (Read EVERY tile, top to bottom; each is ${TILE_H}px of the page at full resolution):\n${im.tiles.map((t) => '  ' + t).join('\n')}\n  palette (share of pixels): ${im.palette.map((c) => `${c.hex} ${c.pct}%`).join(', ')}`)
+        : unique.map((f) => `${f} (Read it)`);
+      return text(`${unique.length} image(s) in design/images/, tiles in design/tiles/.\n\n${lines.join('\n\n')}${errors.length ? '\n\nNotes: ' + errors.join(' | ') : ''}\n\nDo not judge a page from a shrunken overview: read the tiles. Record exact copy, badge styles, type (case, weight, width, mono vs sans), column counts, image aspect ratios and spacing per region.`);
     },
   );
 
