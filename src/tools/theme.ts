@@ -129,8 +129,11 @@ export const themePush = (record: BuildRecord) =>
       target: z.enum(['client', 'staging']),
       name: z.string().optional().describe('Theme name (default: "GW Build — <client> <date>")'),
     },
-    async ({ target, name }) => {
+    async ({ target: requested, name }) => {
       if (!record.themeDir) return fail('No theme directory yet.');
+      // No staging store configured → previews go to the client store as its (single) unpublished dev theme, never a second one.
+      const noStaging = requested === 'staging' && !process.env.GW_STAGING_STORE;
+      const target = noStaging ? 'client' : requested;
       const env =
         target === 'staging'
           ? shopifyEnv(record, { store: process.env.GW_STAGING_STORE, token: process.env.GW_STAGING_THEME_TOKEN || process.env.GW_STAGING_TOKEN })
@@ -158,7 +161,7 @@ export const themePush = (record: BuildRecord) =>
       const errs = (parsed.errors || []).map((e: any) => `${path.relative(record.themeDir!, e.filePath)}: ${e.message}`);
       const all = [...new Set([...errs, ...diag])];
       return {
-        ...text(`Pushed to ${env.SHOPIFY_FLAG_STORE} theme #${t.id} (${t.name}).\npreview: ${t.previewUrl}\neditor: ${t.editorUrl}` + (all.length ? `\n\nUPLOAD ERRORS (${all.length}) — fix and push again:\n${all.join('\n')}` : '\nNo upload errors.')),
+        ...text(`${noStaging ? 'No GW_STAGING_STORE is set, so the "staging" preview went to the client store as the dev theme. ' : ''}Pushed to ${env.SHOPIFY_FLAG_STORE} theme #${t.id} (${t.name}).\npreview: ${t.previewUrl}\neditor: ${t.editorUrl}` + (all.length ? `\n\nUPLOAD ERRORS (${all.length}) — fix and push again:\n${all.join('\n')}` : '\nNo upload errors.')),
         isError: all.length > 0,
       };
     },
