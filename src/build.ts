@@ -36,6 +36,8 @@ export interface DesignInput {
   source: string;
   /** Optional: Figma page/frame names to restrict to */
   frames?: string[];
+  /** Optional: pages[i] labels the i-th comma-separated entry of `source` (Home, Collection, Product, …) */
+  pages?: string[];
 }
 
 export interface BuildIntake {

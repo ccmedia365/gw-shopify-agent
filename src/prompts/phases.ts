@@ -25,7 +25,7 @@ Do:
 function ingesting(r: BuildRecord) {
   return `# Phase: ingesting_design
 
-Ingest every design input with the matching tool (ingest_figma / ingest_html / ingest_images), then Read the rendered images (frames, screenshots, mockups) so you have actually looked at the design, not only the outline.
+Ingest every design input with the matching tool (ingest_figma / ingest_html / ingest_images), then Read the rendered images (frames, screenshots, mockups) so you have actually looked at the design, not only the outline. When an input has a \`pages\` array, pages[i] names the template the i-th source entry is for (Home, Collection, Product, …): use it instead of guessing from the picture, and record it as the page's template in design.json.
 
 Write <workspace>/design/design.json (the build workspace path from the system prompt, NOT inside the theme directory): { pages: [{ name, source, regions: [{ order, kind, heading, text, media, buttons, notes, box }] }], tokens: { colors: [{hex, role}], fonts: {heading, body}, radius, spacing } }. Regions are top-to-bottom; kind is your best read (hero, product grid, feature row, testimonials, …). Do not map to the library yet.
 
