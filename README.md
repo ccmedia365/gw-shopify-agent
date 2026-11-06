@@ -17,7 +17,8 @@ cp .env.example .env             # fill in the values below
 | --- | --- | --- |
 | `SHOPIFY_CLI_THEME_TOKEN` | yes | Theme Access password for the client store (`shptka_…`) |
 | `SHOPIFY_STOREFRONT_PASSWORD` | if the store is password-protected | lets the screenshot tools through the password page |
-| `SHOPIFY_ADMIN_TOKEN` | for catalog loading | custom app token (`shpat_…`) with `write_products, write_inventory, write_files, read_locations, write_publications` |
+| `SHOPIFY_ADMIN_CLIENT_ID`, `SHOPIFY_ADMIN_CLIENT_SECRET` | for catalog, pages, menus | a Dev Dashboard app installed on the store (same Shopify organization), scopes `write_products, write_inventory, write_files, read_locations, write_publications, write_content, write_online_store_navigation`; the agent exchanges them for 24-hour tokens |
+| `SHOPIFY_ADMIN_TOKEN` | alternative | legacy custom-app token (`shpat_…`) for apps created before 2026 |
 | `GW_BASE_THEME` | no | git URL or local path of gw-theme (default `https://github.com/ccmedia365/gw-theme.git`) |
 | `GW_BASE_THEME_TOKEN` | if gw-theme is private | GitHub token that can read gw-theme (falls back to `GW_AGENT_REPO_TOKEN`) |
 | `GW_STAGING_STORE`, `GW_STAGING_THEME_TOKEN`, `GW_STAGING_PASSWORD` | no | Good Work staging store for design previews (gate 1); without them previews go to the client store as an unpublished theme |

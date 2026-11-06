@@ -1,7 +1,8 @@
 /**
  * Shopify Admin tools: raw GraphQL, catalog loading from a product sheet,
- * collections and inventory. Uses the Admin API access token from the build
- * record or SHOPIFY_ADMIN_TOKEN. The model validates mutations with the
+ * collections and inventory. Admin access comes from a Dev Dashboard app's
+ * client credentials (SHOPIFY_ADMIN_CLIENT_ID/SECRET → 24-hour tokens) or a
+ * legacy SHOPIFY_ADMIN_TOKEN / intake.adminToken. The model validates mutations with the
  * Shopify Dev MCP before calling admin_graphql for anything non-standard.
  */
 import fs from 'node:fs';
@@ -15,9 +16,40 @@ const API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-10';
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const fail = (t: string) => ({ content: [{ type: 'text' as const, text: t }], isError: true });
 
+const NO_ADMIN =
+  'No Admin API access. Either SHOPIFY_ADMIN_CLIENT_ID + SHOPIFY_ADMIN_CLIENT_SECRET (a Dev Dashboard app installed on the store, same Shopify organization) or a legacy SHOPIFY_ADMIN_TOKEN / intake.adminToken. Scopes needed: write_products, write_inventory, write_files, read_locations, write_publications, write_content, write_online_store_navigation.';
+
+let cached: { shop: string; token: string; scope: string; expiresAt: number } | null = null;
+
+/**
+ * Admin API token for the client store. Shopify retired copyable tokens for new apps (Jan 2026): a Dev Dashboard app gives a
+ * client id + secret and the client-credentials grant returns a 24-hour token, which we cache and refresh a minute early.
+ * A legacy shpat_ token (apps created before 2026) still works and wins when present.
+ */
+export async function adminToken(record: BuildRecord): Promise<{ token: string; scope?: string }> {
+  const legacy = record.intake.adminToken || process.env.SHOPIFY_ADMIN_TOKEN;
+  if (legacy) return { token: legacy };
+  const id = process.env.SHOPIFY_ADMIN_CLIENT_ID;
+  const secret = process.env.SHOPIFY_ADMIN_CLIENT_SECRET;
+  if (!id || !secret) throw new Error(NO_ADMIN);
+  const shop = record.intake.shopDomain;
+  if (cached && cached.shop === shop && cached.expiresAt > Date.now()) return { token: cached.token, scope: cached.scope };
+  const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: id, client_secret: secret }),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) {
+    const why = json.error === 'shop_not_permitted' ? ' (shop_not_permitted: the app and the store must be in the same Shopify organization in the Dev Dashboard, and the app must be installed on the store)' : '';
+    throw new Error(`Admin token exchange failed (${res.status}): ${JSON.stringify(json).slice(0, 300)}${why}`);
+  }
+  cached = { shop, token: json.access_token, scope: json.scope || '', expiresAt: Date.now() + (Number(json.expires_in || 86399) - 60) * 1000 };
+  return { token: cached.token, scope: cached.scope };
+}
+
 export async function adminGraphql(record: BuildRecord, query: string, variables: Record<string, unknown> = {}) {
-  const token = record.intake.adminToken || process.env.SHOPIFY_ADMIN_TOKEN;
-  if (!token) throw new Error('No Admin API token (intake.adminToken or SHOPIFY_ADMIN_TOKEN). Create a custom app in the store with write_products, write_inventory, write_files, read_locations scopes.');
+  const { token } = await adminToken(record);
   const res = await fetch(`https://${record.intake.shopDomain}/admin/api/${API_VERSION}/graphql.json`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
@@ -234,7 +266,8 @@ export const storeInfo = (record: BuildRecord) =>
              productsCount { count }
              collections(first: 20) { nodes { handle title productsCount { count } } } }`,
         );
-        return text(JSON.stringify(data, null, 1));
+        const { scope } = await adminToken(record);
+        return text(JSON.stringify(data, null, 1) + (scope ? `\n\nGranted Admin API scopes: ${scope}` : ''));
       } catch (e: any) {
         return fail(e.message);
       }
